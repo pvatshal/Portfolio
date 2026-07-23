@@ -15,6 +15,10 @@
      e.g. "dubai.jpg") into the `photos` object. Empty = a pretty
      placeholder shows instead, so it looks good either way.
   4. The letter text near the bottom of the HTML is yours to rewrite.
+
+  PHOTO SHAPES: portrait photos are detected automatically once they
+  load and get a taller 3:4 frame, so nothing gets its head cropped.
+  Landscape photos keep the 4:3 frame. Nothing to configure.
   ────────────────────────────────────────────────────────────
 -->
 
@@ -167,14 +171,23 @@ h2 em{font-style:normal}
   margin:26px 0 0; padding:10px 10px 42px; width:min(300px,72vw);
   background:rgba(246,239,232,.07); border:1px solid var(--faint);
   backdrop-filter:blur(6px); position:relative;
+  transition:width .6s var(--ease);
 }
 .polaroid .frame{
   aspect-ratio:4/3; display:grid; place-items:center; overflow:hidden;
   background:linear-gradient(150deg, color-mix(in oklab, var(--accent) 26%, transparent), rgba(0,0,0,.24));
+  transition:aspect-ratio .6s var(--ease);
 }
-.polaroid img{width:100%; height:100%; object-fit:cover; display:none}
+.polaroid img{width:100%; height:100%; object-fit:cover; object-position:center; display:none}
 .polaroid.has img{display:block}
 .polaroid.has .hint{display:none}
+
+/* tall photos get a tall frame + a narrower card, so nothing is
+   sliced off the top and the card still clears the fold */
+.polaroid.portrait{width:min(226px,54vw)}
+.polaroid.portrait .frame{aspect-ratio:3/4}
+.polaroid.portrait img{object-position:center 38%}
+
 .hint{font-size:10px; letter-spacing:.28em; text-transform:uppercase; color:rgba(246,239,232,.55)}
 .polaroid figcaption{
   position:absolute; left:12px; bottom:14px;
@@ -227,6 +240,7 @@ h2 em{font-style:normal}
   .stage{padding:0 20px 26vh}
   .horizon{height:26vh}
   .polaroid{width:min(210px,48vw); padding:8px 8px 34px; margin-top:18px}
+  .polaroid.portrait{width:min(156px,36vw)}
   .lede{line-height:1.62; margin-bottom:12px}
   h2{margin-bottom:16px}
   .chips{gap:8px; margin-top:16px}
@@ -235,6 +249,7 @@ h2 em{font-style:normal}
 }
 @media (max-height:680px){
   .polaroid{width:min(165px,38vw); padding:6px 6px 26px; margin-top:14px}
+  .polaroid.portrait{width:min(122px,29vw)}
   .polaroid figcaption{font-size:9px; bottom:9px}
 }
 @media (prefers-reduced-motion:reduce){
@@ -481,11 +496,11 @@ h2 em{font-style:normal}
 
   <h2 class="closing r split" id="closing">Happy six months</h2>
 </section>
-  
+
 <script>
 /* ═════════════════ CONFIG — edit me ═════════════════ */
 const CONFIG = {
-  herName: "Drashtu",                 // e.g. "Anaya"  → shows in the closing line
+  herName: "Drashtu",          // shows in the closing line
   startDate: "2026-01-23",     // day one
   photos: {
     dubai:     "dubai.jpeg",   // e.g. "dubai.jpg" or a full https:// link
@@ -505,6 +520,19 @@ const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const lerp  = (a, b, t) => a + (b - a) * t;
 const ease  = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
+/* photos change the page height as they land, so re-measure once
+   per frame instead of on every single load event */
+let relayoutQueued = false;
+function relayout() {
+  if (relayoutQueued) return;
+  relayoutQueued = true;
+  requestAnimationFrame(() => {
+    relayoutQueued = false;
+    measure();
+    onScroll();
+  });
+}
+
 /* ---------- personalise ---------- */
 const days = Math.max(1, Math.round((Date.now() - new Date(CONFIG.startDate)) / 864e5));
 $("#days").dataset.count = days;
@@ -512,12 +540,30 @@ if (CONFIG.herName) {
   $("#closing").textContent = "Happy six months, " + CONFIG.herName;
   $("#signName").textContent = "";
 }
+
+/* ---------- load photos, shape the frame to the photo ---------- */
 Object.entries(CONFIG.photos).forEach(([slot, src]) => {
   if (!src) return;
   const fig = $(`[data-slot="${slot}"]`);
   if (!fig) return;
-  fig.querySelector("img").src = src;
+  const img = fig.querySelector("img");
+
+  const shape = () => {
+    if (!img.naturalWidth) return;
+    // taller than wide → tall frame, so nothing gets cropped off the top
+    fig.classList.toggle("portrait", img.naturalHeight > img.naturalWidth);
+    relayout();
+  };
+
+  img.addEventListener("load", shape);
+  img.addEventListener("error", () => {      // bad filename → show the placeholder
+    fig.classList.remove("has", "portrait");
+    relayout();
+  });
+
+  img.src = src;
   fig.classList.add("has");
+  if (img.complete) shape();                 // already cached
 });
 
 /* ---------- split headlines into words ---------- */
